@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ModbusTCP Communication</title>
+</head>
+<body>
+    <h1>ModbusTCP Communication</h1>
+    <label for="deviceIP">设备IP:</label>
+    <input type="text" id="deviceIP" value="192.168.1.100"><br><br>
+
+    <label for="cloudIP">云服务器IP:</label>
+    <input type="text" id="cloudIP" value="192.168.1.101"><br><br>
+
+    <div id="isConfiguringStatus">正在更新配置..</div>
+    <button id="configButton" onclick="config()">更新配置</button>
+
+    <script>
+        var isConfiguring = false;
+        var isConfiguringStatus = document.getElementById("isConfiguringStatus");
+        isConfiguringStatus.style.display = "none";
+        var configButton = document.getElementById("configButton");
+        var deviceIPInput = document.getElementById('deviceIP');
+        var cloudIPInput = document.getElementById('cloudIP');
+
+        function config() {
+            var deviceIP = deviceIPInput.value;
+            var cloudIP = cloudIPInput.value;
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/config', true);
+            xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            xhr.onreadystatechange = function () {
+                isConfiguring = false;
+                isConfiguringStatus.style.display = "none";
+                configButton.style.display = "block";
+            };
+            var data = { "deviceIP": deviceIP, "cloudIP": cloudIP };
+            xhr.send(JSON.stringify(data));
+            isConfiguring = true;
+            isConfiguringStatus.style.display = "block";
+            configButton.style.display = "none";
+        }
+
+        function status() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/status', true);
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    var rsp = JSON.parse(xhr.responseText)
+                    deviceIPInput.value = rsp.deviceIP;
+                    cloudIPInput.value = rsp.cloudIP;
+                }
+            };
+            xhr.send();
+        }
+        status();
+
+    </script>
+
+</body>
+</html>
+

@@ -1,0 +1,12 @@
+[Unit]
+Description=S2C2S Config Service
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/s2c2s
+ExecStart=/usr/bin/python3 /root/s2c2s/config.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
