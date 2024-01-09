@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/root/s2c2s
-ExecStart=/usr/bin/python3 /root/avc/forwarder.py
+ExecStart=/usr/bin/python3 /root/s2c2s/forwarder.py
 Restart=always
 
 [Install]
