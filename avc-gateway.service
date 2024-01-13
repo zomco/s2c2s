@@ -1,0 +1,12 @@
+[Unit]
+Description=AVC Forward Service
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/root/avc
+ExecStart=/usr/bin/python3 /root/avc/gateway.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

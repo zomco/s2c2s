@@ -4,19 +4,28 @@ import socket
 import time
 import json
 
-import pymodbus.client as ModbusClient
-from pymodbus import (
-    ExceptionResponse,
-    Framer,
-    ModbusException,
-    pymodbus_apply_logging_config,
-)
-# from pymodbus.client.sync import ModbusTcpClient
-# from pymodbus.exceptions import ModbusIOException, ConnectionException
-from avc_bit_read_message import AvcReadDiscreteInputsResponse, AvcReadDiscreteInputsRequest
-from avc_register_read_message import AvcReadHoldingRegistersResponse, AvcReadHoldingRegistersRequest
+import modbus_tk
+import modbus_tk.defines as cst
+import modbus_tk.modbus_tcp as modbus_tcp
 
-pymodbus_apply_logging_config("DEBUG")
+def start_forwarder(device_ip, cloud_ip):
+    global master
+    try:
+        master = modbus_tcp.TcpMaster(host=device_ip)
+        logger.info("Modbus device connected")
+        while master:
+            data = master.execute(1, cst.READ_HOLDING_REGISTERS, 3, 10)
+            if data:
+                logger.info(data)
+                data_str = ','.join(str(val) for val in data)
+                forward_to_cloud(data_str, cloud_server_ip=cloud_ip, cloud_server_port=11502)
+            else:
+                logger.info("Could not poll data from device")
+            time.sleep(5000 / 1000)
+
+    except modbus_tk.modbus.ModbusError as e:
+        logger.error("%s- Code=%d" % (e, e.get_exception_code()))
+
 
 # 设置日志记录器的名称
 logger = logging.getLogger(__name__)
@@ -35,9 +44,6 @@ console_handler.setFormatter(formatter)  # 应用格式化程序到处理器
 # 将处理器添加到记录器
 logger.addHandler(console_handler)
 
-is_mocking = False
-
-    
 def load_config():
     try:
         with open('config.json', 'r') as file:
@@ -45,11 +51,6 @@ def load_config():
             return data
     except FileNotFoundError:
         return config_data
-
-
-def save_data(data):
-    with open('data.json', 'w') as file:
-        json.dump(data, file)
 
 
 def connect_to_server(ip, port):
@@ -68,7 +69,6 @@ def forward_data(data):
     try:
         client1_socket = connect_to_server('192.168.1.101', 500)
         client1_socket.sendall(json.dumps(data).encode("utf-8"))
-        
     except Exception as e:
         logger.error("Error forwarding data to cloud server:", e)
 
@@ -77,25 +77,18 @@ def encode_machine_data(client, slave, index):
     address = (index<<16) + 10
     # 0x0010 ~ 0x0017, 8 x 1 words
     d0x0010 = ""
-    if is_mocking:
-        d0x0010 = [False for i in range(8*16)]
-    else:
-        r0x0010 = client.read_discrete_inputs(address=10, count=8*16, unit=slave)
-        if r0x0010.isError():
-            logger.error(f"Poll machine[{index}](0x0010) error：{r0x0010}")
-        else:
-            d0x0010 = r0x0010.bits
+    try: 
+        d0x0010 = client.execute(slave, cst.READ_DISCRETE_INPUTS, 10, 8)
+    except Exception as ex:
+        logger.error(f"Poll machine[{index}](0x0010) error：{ex}")
 
     # 0x0030 ~ 0x14c, 285 x 2 words
     d0x0030 = ""
-    if is_mocking:
-        d0x0030 = [0 for i in range(285)]
-    else:
-        r0x0030 = client.read_holding_registers(address=30, count=285, unit=slave)
-        if r0x0030.isError():
-            logger.error(f"Poll machine[{index}](0x0030) error：{r0x0030}")
-        else:
-            d0x0030 = r0x0030.registers
+    try:
+        d0x0030 = client.execute(slave, cst.READ_HOLDING_REGISTERS, 30, 285)
+    except Exception as ex:
+        logger.error(f"Poll machine[{index}](0x0030) error：{ex}")
+
     return { "0x10": d0x0010, "0x30": d0x0030 }
 
 
@@ -103,25 +96,18 @@ def encode_storage_data(client, slave, index):
     address = (index<<16) + 10
     # 0x0010 ~ 0x0020, 11 x 1 words
     d0x0010 = ""
-    if is_mocking:
-        d0x0010 = [False for i in range(11*16)]
-    else:
-        r0x0010 = client.read_discrete_inputs(address=10, count=11*16, unit=slave)
-        if r0x0010.isError():
-            logger.error(f"Poll storage[{index}](0x0010) error：{r0x0010}")
-        else:
-            d0x0010 = r0x0010.bits
+    try:
+        d0x0010 = client.execute(slave, cst.READ_DISCRETE_INPUTS, 10, 11)
+    except Exception as ex:
+        logger.error(f"Poll storage[{index}](0x0010) error：{ex}")
 
     # 0x0030 ~ 0x005a, 43 x 2 words
     d0x0030 = ""
-    if is_mocking:
-        d0x0010 = [0 for i in range(43)]
-    else:
-        r0x0030 = client.read_holding_registers(address=30, count=43, unit=slave)
-        if r0x0030.isError():
-            logger.error(f"Poll storage[{index}](0x0030) error：{r0x0030}")
-        else:
-            d0x0030 = r0x0030.registers
+    try:
+        d0x0030 = client.execute(slave, cst.READ_HOLDING_REGISTERS, 30, 43)
+    except Exception as ex:
+        logger.error(f"Poll storage[{index}](0x0030) error：{ex}")
+
     return { "0x10": d0x0010, "0x30": d0x0030 }
 
 
@@ -129,30 +115,22 @@ def encode_monitor_data(client, slave):
     address = (200<<16) + 10
     # 0x0010 ~ 0x0018, 12 x 1 words
     d0x0010 = ""
-    if is_mocking:
-        d0x0010 = [0 for i in range(12*16)]
-    else:
-        try:
-            request = AvcReadDiscreteInputsRequest(address=10, count=12*16, unit=slave)
-            r0x0010 = client.execute(request)
-            # r0x0010 = client.read_discrete_inputs(address=address, count=12*16, unit=slave)
-            if r0x0010.isError():
-                logger.error(f"Poll monitor error：{r0x0010}")
-            else:
-                d0x0010 = r0x0010.bits
-        except Exception as ee:
-            logger.error(f"Poll monitor error:{ee}")
+    try:
+        d0x0010 = client.execute(slave, cst.READ_DISCRETE_INPUTS, 10, 12)
+    except Exception as ex:
+        logger.error(f"Poll monitor error：{d0x0010}")
+    
     return { "0x10": d0x0010 }
 
 
 def encode_data(client, slave):
     data = {}
-    # for i in range(0, 56):
-    #     name = "machine" + str(i)
-    #     data[name] = encode_machine_data(client, slave, i)
-    # for i in range(101, 108):
-    #     name = "storage" + str(i - 101)
-    #     data[name] = encode_storage_data(client, slave, i)
+    for i in range(0, 56):
+        name = "machine" + str(i)
+        data[name] = encode_machine_data(client, slave, i)
+    for i in range(101, 108):
+        name = "storage" + str(i - 101)
+        data[name] = encode_storage_data(client, slave, i)
     data["monitor"] = encode_monitor_data(client, slave)
     return data
 
@@ -160,9 +138,7 @@ def encode_data(client, slave):
 def pool_data(device):
     data = ""
     try:
-        client = ModbusClient.ModbusTcpClient(host=device["ip"], strict=False)
-        client.register(AvcReadDiscreteInputsResponse)
-        client.register(AvcReadHoldingRegistersResponse)
+        client = modbus_tcp.TcpMaster(host=device["ip"])
         data = encode_data(client, device["slave"])
     except Exception as exc:
         logger.error(f"Error when polling data {exc}")
@@ -178,7 +154,6 @@ def start_forwarder(devices):
             name = "slave" + str(device["slave"])
             data[name] = pool_data(device)
         forward_data(data)
-        save_data(data)
         time.sleep(5000 / 1000)
 
 
